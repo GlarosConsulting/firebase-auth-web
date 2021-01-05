@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useCallback,
+  useMemo,
 } from 'react';
 
 import firebase from 'firebase/app';
@@ -17,12 +18,25 @@ interface IUserCredentials {
 
 type Provider = 'google';
 
+interface IUser {
+  data: firebase.User;
+  additional: {
+    company: string;
+  };
+}
+
 interface IAuthenticationContext {
   user: firebase.User;
   createUser(credentials: IUserCredentials): Promise<firebase.User>;
   signIn(credentials: IUserCredentials): Promise<firebase.User>;
-  signInWith(provider: Provider): Promise<firebase.User>;
-  signOut(): void;
+  signInWithPopup(provider: Provider): Promise<firebase.User>;
+  signOut(): Promise<void>;
+  sendForgotPasswordEmail(email: string): Promise<void>;
+  sendPhoneVerificationId(phone: string): Promise<string>;
+  signInWithPhoneNumber(
+    verificationCode: string,
+    verificationId: string,
+  ): Promise<firebase.User>;
 }
 
 const AuthenticationContext = createContext<IAuthenticationContext | null>(
@@ -30,10 +44,34 @@ const AuthenticationContext = createContext<IAuthenticationContext | null>(
 );
 
 const AuthenticationProvider: React.FC = ({ children }) => {
-  const [user, setUser] = useState<firebase.User>(null);
+  const [user, setUser] = useState<IUser>(null);
 
   useEffect(() => {
-    firebaseApp.auth().onAuthStateChanged(setUser);
+    firebaseApp.auth().onAuthStateChanged(async newUser => {
+      if (!newUser) {
+        setUser(null);
+
+        return;
+      }
+
+      const reference = await firebaseApp
+        .database()
+        .ref(`users/${newUser.uid}`)
+        .get();
+      const data = reference.val();
+
+      setUser({
+        data: newUser,
+        additional: data,
+      });
+    });
+
+    window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier(
+      'recaptcha-container',
+      {
+        size: 'invisible',
+      },
+    );
   }, []);
 
   const createUser = useCallback(
@@ -41,6 +79,10 @@ const AuthenticationProvider: React.FC = ({ children }) => {
       const response = await firebaseApp
         .auth()
         .createUserWithEmailAndPassword(email, password);
+
+      await firebaseApp.database().ref(`users/${response.user.uid}`).set({
+        company: 'test',
+      });
 
       return response.user;
     },
@@ -78,7 +120,7 @@ const AuthenticationProvider: React.FC = ({ children }) => {
     [],
   );
 
-  const signInWith = useCallback(
+  const signInWithPopup = useCallback(
     async (provider: Provider): Promise<firebase.User> => {
       switch (provider) {
         case 'google':
@@ -96,12 +138,55 @@ const AuthenticationProvider: React.FC = ({ children }) => {
     [],
   );
 
-  const signOut = useCallback(() => {
-    firebaseApp.auth().signOut();
-  }, []);
+  const signOut = useCallback(async () => firebaseApp.auth().signOut(), []);
+
+  const sendForgotPasswordEmail = useCallback(
+    async (email: string) => firebaseApp.auth().sendPasswordResetEmail(email),
+    [],
+  );
+
+  const sendPhoneVerificationId = useCallback(
+    async (phone: string): Promise<string> => {
+      const phoneProvider = new firebase.auth.PhoneAuthProvider();
+
+      const verificationId = await phoneProvider.verifyPhoneNumber(
+        phone,
+        window.recaptchaVerifier,
+      );
+
+      return verificationId;
+    },
+    [],
+  );
+
+  const signInWithPhoneNumber = useCallback(
+    async (verificationCode: string, verificationId: string) => {
+      const phoneCredential = firebase.auth.PhoneAuthProvider.credential(
+        verificationId,
+        verificationCode,
+      );
+
+      const response = await firebase
+        .auth()
+        .signInWithCredential(phoneCredential);
+
+      return response.user;
+    },
+    [],
+  );
+
   return (
     <AuthenticationContext.Provider
-      value={{ user, createUser, signIn, signInWith, signOut }}
+      value={{
+        user,
+        createUser,
+        signIn,
+        signInWithPopup,
+        signOut,
+        sendForgotPasswordEmail,
+        sendPhoneVerificationId,
+        signInWithPhoneNumber,
+      }}
     >
       {children}
     </AuthenticationContext.Provider>

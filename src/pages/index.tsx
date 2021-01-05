@@ -1,39 +1,87 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 
 import { Form } from '@unform/web';
+import firebase from 'firebase/app';
 
 import Input from '@/components/Input';
 import SEO from '@/components/SEO';
 import { useAuthentication } from '@/context/authentication';
-import firebaseApp from '@/lib/firebase';
 import { Title } from '@/styles/pages/Home';
 
-interface IFormData {
+interface IUserCredentialsFormData {
   email: string;
   password: string;
 }
 
-const Home: React.FC = () => {
-  const { user, createUser, signIn, signInWith, signOut } = useAuthentication();
+interface IPhoneFormData {
+  phone: string;
+}
+interface IForgotPasswordFormData {
+  email: string;
+}
 
-  const handleSubmit = useCallback(async ({ email, password }: IFormData) => {
-    try {
-      await signIn({
-        email,
-        password,
-      });
-    } catch (err) {
-      alert(err);
-    }
-  }, []);
+const Home: React.FC = () => {
+  const {
+    user,
+    createUser,
+    signIn,
+    signInWithPopup,
+    signOut,
+    sendForgotPasswordEmail,
+    sendPhoneVerificationId,
+    signInWithPhoneNumber,
+  } = useAuthentication();
+
+  const handleSignIn = useCallback(
+    async ({ email, password }: IUserCredentialsFormData) => {
+      try {
+        await signIn({
+          email,
+          password,
+        });
+      } catch (err) {
+        alert(err);
+      }
+    },
+    [],
+  );
 
   const handleCreateUser = useCallback(
-    async ({ email, password }: IFormData) => {
+    async ({ email, password }: IUserCredentialsFormData) => {
       try {
         await createUser({
           email,
           password,
         });
+      } catch (err) {
+        alert(err);
+      }
+    },
+    [],
+  );
+
+  const handleSignInWithPhone = useCallback(
+    async ({ phone }: IPhoneFormData) => {
+      try {
+        const verificationId = await sendPhoneVerificationId(phone);
+
+        const verificationCode = window.prompt(
+          'Please enter the verification ' +
+            'code that was sent to your mobile device.',
+        );
+
+        await signInWithPhoneNumber(verificationCode, verificationId);
+      } catch (err) {
+        alert(err);
+      }
+    },
+    [],
+  );
+
+  const handleSendForgotPasswordEmail = useCallback(
+    async ({ email }: IForgotPasswordFormData) => {
+      try {
+        await sendForgotPasswordEmail(email);
       } catch (err) {
         alert(err);
       }
@@ -54,11 +102,11 @@ const Home: React.FC = () => {
           <button onClick={() => signOut()}>Sign Out</button>
         ) : (
           <div>
-            <button onClick={() => signInWith('google')}>
+            <button onClick={() => signInWithPopup('google')}>
               Sign In with Google
             </button>
 
-            <Form onSubmit={handleSubmit}>
+            <Form onSubmit={handleSignIn}>
               <Input name="email" type="email" placeholder="E-mail" />
               <Input name="password" type="password" placeholder="Password" />
 
@@ -70,6 +118,18 @@ const Home: React.FC = () => {
               <Input name="password" type="password" placeholder="Password" />
 
               <button type="submit">Create account</button>
+            </Form>
+
+            <Form onSubmit={handleSignInWithPhone}>
+              <Input name="phone" type="phone" placeholder="Phone" />
+
+              <button type="submit">Sign In with Phone</button>
+            </Form>
+
+            <Form onSubmit={handleSendForgotPasswordEmail}>
+              <Input name="email" type="email" placeholder="E-mail" />
+
+              <button type="submit">Send forgot password e-mail</button>
             </Form>
           </div>
         )}

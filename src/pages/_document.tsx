@@ -52,6 +52,8 @@ export default class MyDocument extends Document {
         </Head>
 
         <body>
+          <div id="recaptcha-container" />
+
           <Main />
           <NextScript />
         </body>
